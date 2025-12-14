@@ -156,6 +156,25 @@ services:
       - "9042:9042"
     environment:
       - CASSANDRA_CLUSTER_NAME=energy-cluster
+    volumes:
+      - cassandra-data:/var/lib/cassandra
+      - ./cassandra:/cassandra
+    networks:
+      - energy-network
+
+  cassandra-init:
+    image: cassandra:4.1
+    container_name: cassandra-init
+    depends_on:
+      - cassandra
+    volumes:
+      - ./cassandra:/cassandra
+    entrypoint: ["/bin/bash", "-lc"]
+    command: >
+      "echo 'Waiting for Cassandra...' &&
+       for i in {1..60}; do cqlsh cassandra 9042 -e 'DESCRIBE KEYSPACES;' && break || sleep 2; done &&
+       cqlsh cassandra 9042 -f /cassandra/schema.cql &&
+       echo 'Cassandra schema applied.'"
     networks:
       - energy-network
 
@@ -168,3 +187,4 @@ volumes:
   datanode1-data:
   datanode2-data:
   datanode3-data:
+  cassandra-data:
