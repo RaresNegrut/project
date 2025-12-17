@@ -177,7 +177,59 @@ services:
        echo 'Cassandra schema applied.'"
     networks:
       - energy-network
+    
+  metastore-db:
+    image: postgres:15
+    container_name: metastore-db
+    environment:
+      POSTGRES_DB: metastore_db
+      POSTGRES_USER: hive
+      POSTGRES_PASSWORD: hivepassword
+    volumes:
+      - metastore-db-data:/var/lib/postgresql/data
+    networks:
+      - energy-network
 
+  hive-metastore:
+    image: apache/hive:standalone-metastore-4.2.0
+    container_name: hive-metastore
+    depends_on:
+      - metastore-db
+      - namenode
+    ports:
+      - "9083:9083"
+    environment:
+      SERVICE_NAME: metastore
+      DB_DRIVER: postgres
+      SERVICE_OPTS: >
+        -Djavax.jdo.option.ConnectionDriverName=org.postgresql.Driver
+        -Djavax.jdo.option.ConnectionURL=jdbc:postgresql://metastore-db:5432/metastore_db
+        -Djavax.jdo.option.ConnectionUserName=hive
+        -Djavax.jdo.option.ConnectionPassword=hivepassword
+        -Dhive.metastore.warehouse.dir=/user/hive/warehouse
+    volumes:
+      - ./hadoop-conf:/etc/hadoop/conf
+      - ./trino/etc:/etc/trino
+      - ./hive/ext-jars:/tmp/ext-jars
+    networks:
+      - energy-network
+
+  trino:
+    image: trinodb/trino:478
+    container_name: trino
+    depends_on:
+      - hive-metastore
+      - cassandra
+      - namenode
+    ports:
+      - "8082:8080"   # host 8080 is already used by kafka-ui in your compose
+    volumes:
+      - ./trino/etc:/etc/trino
+      - ./hadoop-conf:/etc/hadoop/conf
+      - ./trino/sql:/sql
+    networks:
+      - energy-network
+      
 networks:
   energy-network:
     driver: bridge
@@ -188,3 +240,4 @@ volumes:
   datanode2-data:
   datanode3-data:
   cassandra-data:
+  metastore-db-data:

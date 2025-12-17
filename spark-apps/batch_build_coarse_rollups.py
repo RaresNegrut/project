@@ -104,10 +104,10 @@ if __name__ == "__main__":
     # If you also export raw to HDFS daily, you can include it here:
     raw_export_path = "hdfs://namenode:9000/user/hadoop/energy_data/raw_export"
 
-    df_train = spark.read.json(training_path)
+    df_train = spark.read.parquet(training_path)
     # raw_export may not exist yet; keep it optional
     try:
-        df_export = spark.read.json(raw_export_path)
+        df_export = spark.read.parquet(raw_export_path)
         df = df_train.unionByName(df_export, allowMissingColumns=True)
     except Exception:
         df = df_train

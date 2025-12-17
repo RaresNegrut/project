@@ -55,8 +55,8 @@ print(f"Training records: {training_df.count()}")
 print(f"Test records: {test_df.count()}")
 
 print("Writing to HDFS...")
-training_df.write.mode("overwrite").partitionBy("year", "month").option("compression", "snappy").json("hdfs://namenode:9000/user/hadoop/energy_data/training")
-test_df.write.mode("overwrite").option("compression", "snappy").json("hdfs://namenode:9000/user/hadoop/energy_data/test")
+training_df.write.mode("overwrite").partitionBy("year", "month").option("compression", "snappy").parquet("hdfs://namenode:9000/user/hadoop/energy_data/training")
+test_df.write.mode("overwrite").option("compression", "snappy").parquet("hdfs://namenode:9000/user/hadoop/energy_data/test")
 
 print("✓ Ingestion complete!")
 spark.stop()
