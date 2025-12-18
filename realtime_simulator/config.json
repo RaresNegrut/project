@@ -1,0 +1,7 @@
+{
+  "kafka_broker": "kafka:9092",
+  "topic": "raw-energy-data",
+  "frequency_seconds": 60,
+  "csv_file": "energy_data.csv",
+  "csv_delimiter": ";"
+}

@@ -11,23 +11,78 @@ services:
       - energy-network
 
   kafka:
-    image: confluentinc/cp-kafka:7.5.0
+    image: apache/kafka:latest
     container_name: kafka
-    depends_on:
-      - zookeeper
+    # This port exposes Kafka to the host machine for external clients
     ports:
       - "9092:9092"
-      - "9093:9093"
     environment:
+      # General Broker Configuration
       KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:9093
+      KAFKA_PROCESS_ROLES: broker, controller
+      # Listeners (Internal & External)
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://kafka:9093
+      # Advertised Listener: MUST use the service name ('kafka') for inter-container communication
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      # Security & Quorum Configuration (KRaft specific)
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      # Other essential settings
+      KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
+      KAFKA_CLUSTER_ID: "5L6g3nShT-eMCtK--X86sw"
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false" # Set to false to manage topics explicitly
+    # The default command runs the Kafka server
+    # command: ["/bin/sh", "-c", "exec /opt/kafka/bin/kafka-server-start.sh /opt/kafka/config/kraft/server.properties"]
+    # healthcheck ensures the container is ready before dependent services start
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "/opt/kafka/bin/kafka-broker-api-versions.sh",
+          "--bootstrap-server",
+          "kafka:9092",
+        ]
+      interval: 5s
+      timeout: 10s
+      retries: 5
+      start_period: 5s
+    # volumes:
+    # - ./kafka-data:/tmp/kraft-combined-logs # Uncomment for persistent data
+    networks:
+      - energy-network
+
+  kafka-init:
+    # Use a compatible Kafka image for CLI tools
+    image: apache/kafka:latest
+    container_name: kafka-init
+    # Ensure this service only starts after the 'kafka' broker is healthy
+    depends_on:
+      kafka:
+        condition: service_healthy
+    # This command creates the 'raw-energy-data' and 'processed-energy-data' topics
+    command:
+      [
+        "/bin/sh",
+        "-c",
+        "sleep 5 && /opt/kafka/bin/kafka-topics.sh --create --if-not-exists --topic raw-energy-data --bootstrap-server kafka:9092 --partitions 1 --replication-factor 1 && sleep 5 && /opt/kafka/bin/kafka-topics.sh --create --if-not-exists --topic processed-energy-data --bootstrap-server kafka:9092 --partitions 1 --replication-factor 1",
+      ]
+    networks:
+      - energy-network
+
+  energy_simulator:
+    build:
+      context: ./realtime_simulator
+    container_name: energy_simulator
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    # volumes:
+    #   - ./:/app
+    # environment:
+    #   KAFKA_BROKER: kafka:9092
+    #command: python energy_simulator.py
     networks:
       - energy-network
 
@@ -134,6 +189,29 @@ services:
     volumes:
       - ./spark-apps:/opt/spark-apps
       - ./data:/data
+    networks:
+      - energy-network
+
+  spark_streaming:
+    build:
+      context: ./realtime_processing
+    container_name: spark_streaming
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      cassandra-init:
+        condition: service_completed_successfully
+    # volumes:
+    #   - ./:/opt/spark/app
+    # environment:
+    #   KAFKA_BROKER: kafka:9092
+    # command:
+    #   [
+    #     "/opt/spark/spark-submit",
+    #     "--packages",
+    #     "org.apache.spark:spark-sql-kafka-0-10_2.12:3.4.0",
+    #     "spark_streaming.py",
+    #   ]
     networks:
       - energy-network
 
